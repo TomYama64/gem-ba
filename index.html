@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>現場作業管理マップ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
+    #map { width: 100%; height: calc(100% - 60px); background: #f0f0f0; }
+    #controls { height: 60px; background: #333; color: white; display: flex; align-items: center; justify-content: space-around; padding: 0 10px; }
+    .btn { background: #007bff; color: white; border: none; padding: 10px 16px; font-size: 14px; border-radius: 4px; font-weight: bold; }
+    .btn-reset { background: #dc3545; }
+    /* ピンのカスタムデザイン */
+    .worker-pin {
+      background: #007bff; color: white; padding: 4px 8px; border-radius: 12px;
+      font-size: 12px; font-weight: bold; border: 2px solid white; white-space: nowrap;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.4); text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+  <div id="controls">
+    <button class="btn" onclick="addWorker()">＋ 作業員を追加</button>
+    <button class="btn btn-reset" onclick="clearAll()">全削除</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // 1. 現場図面画像の設定（※お手持ちの図面画像URLに変更してください）
+    const imageUrl = 'map.png';
+    const imageBounds = [[0, 0], [700, 1000]]; // 画像の高さ700, 幅1000として設定
+
+    // 2. マップ初期化（緯度経度ではなく平面画像用に設定）
+    const map = L.map('map', {
+      crs: L.CRS.Simple,
+      minZoom: -1,
+      maxZoom: 2
+    });
+
+    L.imageOverlay(imageUrl, imageBounds).addTo(map);
+    map.fitBounds(imageBounds);
+
+    let workers = JSON.parse(localStorage.getItem('site_workers') || '[]');
+    let markers = {};
+
+    // 画面ロード時に保存データを読み込み
+    workers.forEach(w => renderMarker(w));
+
+    // 作業員マーカーを描画する関数
+    function renderMarker(worker) {
+      const icon = L.divIcon({
+        className: 'custom-pin',
+        html: `<div class="worker-pin">${worker.name}<br><small style="font-size:10px; opacity:0.8;">${worker.task}</small></div>`,
+        iconAnchor: [30, 15]
+      });
+
+      const marker = L.marker([worker.y, worker.x], { icon: icon, draggable: true }).addTo(map);
+
+      // ドラッグ終了時に位置を保存
+      marker.on('dragend', function (e) {
+        const latlng = e.target.getLatLng();
+        worker.y = latlng.lat;
+        worker.x = latlng.lng;
+        saveData();
+      });
+
+      // タップで編集・削除
+      marker.on('click', function () {
+        const action = prompt(`「${worker.name}」の操作を選んでください\n1: 内容編集\n2: 削除`, "1");
+        if (action === "1") {
+          const newName = prompt("作業員名:", worker.name);
+          const newTask = prompt("作業内容:", worker.task);
+          if (newName) worker.name = newName;
+          if (newTask) worker.task = newTask;
+          map.removeLayer(marker);
+          renderMarker(worker);
+          saveData();
+        } else if (action === "2") {
+          map.removeLayer(marker);
+          workers = workers.filter(w => w.id !== worker.id);
+          saveData();
+        }
+      });
+
+      markers[worker.id] = marker;
+    }
+
+    // 作業員の新規追加
+    function addWorker() {
+      const name = prompt("作業員名を入力してください:", "佐藤");
+      if (!name) return;
+      const task = prompt("作業内容を入力してください:", "配管工事");
+
+      // 図面の中心付近に配置
+      const center = map.getCenter();
+      const newWorker = {
+        id: Date.now(),
+        name: name,
+        task: task || '未設定',
+        x: center.lng,
+        y: center.lat
+      };
+
+      workers.push(newWorker);
+      renderMarker(newWorker);
+      saveData();
+    }
+
+    // ローカルストレージに保存
+    function saveData() {
+      localStorage.setItem('site_workers', JSON.stringify(workers));
+    }
+
+    // 全データ削除
+    function clearAll() {
+      if (confirm("すべての作業員ピンを削除しますか？")) {
+        Object.values(markers).forEach(m => map.removeLayer(m));
+        workers = [];
+        markers = {};
+        saveData();
+      }
+    }
+  </script>
+</body>
+</html>
