@@ -1,0 +1,67 @@
+body, html { 
+  margin: 0; 
+  padding: 0; 
+  height: 100%; 
+  width: 100%; 
+  overflow: hidden; 
+}
+
+#map { 
+  width: 100%; 
+  height: calc(100% - 60px); 
+  background: #f0f0f0; 
+}
+
+#controls { 
+  height: 60px; 
+  background: #333; 
+  color: white; 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-around; 
+  padding: 0 10px; 
+}
+
+.btn { 
+  background: #007bff; 
+  color: white; 
+  border: none; 
+  padding: 10px 14px; 
+  font-size: 14px; 
+  border-radius: 4px; 
+  font-weight: bold; 
+  cursor: pointer; 
+}
+
+.btn-reset { 
+  background: #dc3545; 
+}
+
+.btn-file { 
+  background: #28a745; 
+  display: inline-block; 
+}
+
+/* ピンのデザイン設定 */
+.worker-pin {
+  background: #007bff;
+  color: white;
+  width: 80px;
+  padding: 8px 0 8px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+  border: 2px solid white;
+  white-space: nowrap;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+  text-align: left;
+  box-sizing: border-box;
+  /* 追記：ズーム時に左上（ピンの配置基準点）を中心に伸縮させる */
+  transform: scale(var(--pin-scale, 1));
+  transform-origin: top left;
+  transition: transform 0.1s ease-out; /* なめらかに変化 */
+}
+/* ズームコントロールボタン（＋/ー）を非表示にする */
+.leaflet-control-zoom {
+  display: none !important;
+}
