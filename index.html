@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>現場作業管理マップ</title>
+    
+    <!-- Leafletの標準CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- 自作CSSファイルを読み込む -->
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="map"></div>
+  <div id="controls">
+    <!-- スマホから図面画像を選択するボタン -->
+    <label class="btn btn-file">
+      📂 図面を選択
+      <input type="file" id="imageInput" accept="image/*" style="display:none;" onchange="loadUserImage(event)">
+    </label>
+    <button class="btn" onclick="addWorker()">＋ 作業員</button>
+    <button class="btn btn-reset" onclick="clearAll()">全削除</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // 1. マップの初期化
+    const map = L.map('map', {
+      crs: L.CRS.Simple,
+      minZoom: -1,
+      maxZoom: 2,
+      zoomControl: false // ★ズームボタンを非表示にする設定
+    });
+
+    // 明示的にズームボタンを削除（追記）
+    if (map.zoomControl) {
+      map.removeControl(map.zoomControl);
+    }
+
+    let currentOverlay = null;
+    let workers = JSON.parse(localStorage.getItem('site_workers') || '[]');
+    let markers = {};
+
+    // 2. ピンの拡大縮小（スケール）を更新する関数
+    function updatePinScale() {
+      const zoom = map.getZoom();
+      // ズームレベルに応じて倍率を計算 (数値1.4でお好みの伸縮度合いに調整可能)
+      const scale = Math.pow(1.4, zoom); 
+      // transformを直接触らず、CSS変数 (--pin-scale) だけを書き換える
+      document.querySelectorAll('.worker-pin').forEach(el => {
+        el.style.setProperty('--pin-scale', scale);
+      });
+    }
+
+    // ズーム変化中およびズーム完了時に倍率を更新
+    map.on('zoom', updatePinScale);
+    map.on('zoomend', updatePinScale);
+
+    // 3. ローカルストレージに保存された画像があれば自動読み込み
+    const savedImage = localStorage.getItem('site_map_image');
+    if (savedImage) {
+      displayImage(savedImage);
+    } else {
+      map.setView([350, 500], 0);
+    }
+
+    // 4. ユーザーが画像を選択した時の処理
+    function loadUserImage(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const imageDataUrl = event.target.result;
+        try {
+          localStorage.setItem('site_map_image', imageDataUrl);
+        } catch(err) {
+          console.warn("画像サイズが大きいためブラウザへの保存はスキップされました");
+        }
+        displayImage(imageDataUrl);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 5. 画像を図面としてマップに表示
+    function displayImage(url) {
+      const img = new Image();
+      img.onload = function() {
+        const bounds = [[0, 0], [this.height, this.width]];
+        if (currentOverlay) map.removeLayer(currentOverlay);
+        
+        currentOverlay = L.imageOverlay(url, bounds).addTo(map);
+        // スマホ画面のサイズ変化を再計算してから枠内に収める
+    map.invalidateSize();
+    map.fitBounds(bounds, { padding: [10, 10] }); // 周囲に少し余白を作って全体を表示
+
+    // 画像の全体像が見えるように最小ズームを動的に設定
+    const minZoom = map.getBoundsZoom(bounds, true);
+    map.setMinZoom(minZoom - 1); // 全体よりさらに少し引けるように設定
+        // ピンの再描画
+        Object.values(markers).forEach(m => map.removeLayer(m));
+        markers = {};
+        workers.forEach(w => renderMarker(w));
+
+        // 描画直後にスケールを適用
+        updatePinScale();
+      };
+      img.src = url;
+    }
+
+    // 6. 作業員ピンを描画
+    function renderMarker(worker) {
+      const icon = L.divIcon({
+        className: 'custom-pin',
+        html: `<div class="worker-pin">${worker.name}<br><span style="font-size:13px; font-weight:normal; opacity:0.9; display:block; margin-top:2px;">${worker.task}</span></div>`,
+        iconAnchor: [15, 25]
+      });
+
+      const marker = L.marker([worker.y, worker.x], { icon: icon, draggable: true }).addTo(map);
+
+      // ドラッグ終了時に位置を保存
+      marker.on('dragend', function (e) {
+        const latlng = e.target.getLatLng();
+        worker.y = latlng.lat;
+        worker.x = latlng.lng;
+        saveData();
+      });
+
+      // ピンタップで編集・削除
+      marker.on('click', function () {
+        const action = prompt(`「${worker.name}」の操作を選んでください\n1: 内容編集\n2: 削除`, "1");
+        if (action === "1") {
+          const newName = prompt("作業員名:", worker.name);
+          const newTask = prompt("作業内容:", worker.task);
+          if (newName) worker.name = newName;
+          if (newTask) worker.task = newTask;
+          map.removeLayer(marker);
+          renderMarker(worker);
+          saveData();
+        } else if (action === "2") {
+          map.removeLayer(marker);
+          workers = workers.filter(w => w.id !== worker.id);
+          saveData();
+        }
+      });
+
+      markers[worker.id] = marker;
+      
+      // ピン描画後に倍率を適用
+      updatePinScale();
+    }
+
+    // 7. 作業員の追加
+    function addWorker() {
+      const name = prompt("作業員名を入力してください:", "佐藤");
+      if (!name) return;
+      const task = prompt("作業内容を入力してください:", "配管工事");
+
+      const center = map.getCenter();
+      const newWorker = {
+        id: Date.now(),
+        name: name,
+        task: task || '未設定',
+        x: center.lng,
+        y: center.lat
+      };
+
+      workers.push(newWorker);
+      renderMarker(newWorker);
+      saveData();
+    }
+
+    // 8. データ保存
+    function saveData() {
+      localStorage.setItem('site_workers', JSON.stringify(workers));
+    }
+
+    // 9. 全データ削除
+    function clearAll() {
+      if (confirm("すべての作業員ピンを削除しますか？")) {
+        Object.values(markers).forEach(m => map.removeLayer(m));
+        workers = [];
+        markers = {};
+        saveData();
+      }
+    }
+  </script>
+</body>
+</html>
